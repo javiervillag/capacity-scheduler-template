@@ -44,10 +44,10 @@ type AppData = {
 };
 
 type DrawerMode = "resource" | "job" | "assign" | "job-detail" | "resource-detail" | null;
-type Tab = "Dashboard" | "Month" | "Week" | "Resources" | "Conflicts" | "Import/Export";
+type Tab = "Dashboard" | "Month" | "Week" | "Resources" | "Conflicts" | "Import/Export" | "Docs";
 
 const emptyData: AppData = { resources: [], jobs: [], assignments: [], conflicts: [] };
-const tabs: Tab[] = ["Dashboard", "Month", "Week", "Resources", "Conflicts", "Import/Export"];
+const tabs: Tab[] = ["Dashboard", "Month", "Week", "Resources", "Conflicts", "Import/Export", "Docs"];
 const statuses: JobStatus[] = ["DRAFT", "SCHEDULED", "IN_PROGRESS", "COMPLETED", "ON_HOLD", "CANCELLED"];
 const resourceTypes: ResourceType[] = ["PERSON", "CREW", "EQUIPMENT", "SUBCONTRACTOR"];
 const resourceLabels: Record<ResourceType, string> = {
@@ -122,6 +122,39 @@ function weekDays(anchor: Date) {
   });
 }
 
+function formatConflictType(type: ScheduleConflict["type"]) {
+  return type
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function conflictTone(conflicts: ScheduleConflict[]) {
+  if (conflicts.some((conflict) => conflict.severity === "error")) return "error";
+  if (conflicts.length > 0) return "warning";
+  return "clear";
+}
+
+function conflictLabel(conflicts: ScheduleConflict[]) {
+  if (conflicts.length === 0) return "";
+  const first = conflicts[0];
+  return conflicts.length === 1 ? formatConflictType(first.type) : `${conflicts.length} conflicts`;
+}
+
+function conflictClasses(conflicts: ScheduleConflict[]) {
+  const tone = conflictTone(conflicts);
+  if (tone === "error") return "border-rose bg-rose/5";
+  if (tone === "warning") return "border-amber bg-amber/5";
+  return "border-line bg-white";
+}
+
+function conflictBadgeClasses(conflicts: ScheduleConflict[]) {
+  const tone = conflictTone(conflicts);
+  if (tone === "error") return "bg-rose text-white";
+  if (tone === "warning") return "bg-amber text-white";
+  return "bg-panel text-ink";
+}
+
 export default function Home() {
   const [data, setData] = useState<AppData>(emptyData);
   const [activeTab, setActiveTab] = useState<Tab>("Dashboard");
@@ -185,7 +218,21 @@ export default function Home() {
     return map;
   }, [data.assignments, data.jobs]);
 
+  const conflictsByJob = useMemo(() => {
+    const map = new Map<string, ScheduleConflict[]>();
+    data.conflicts.forEach((conflict) => {
+      const jobIds = new Set<string>();
+      if (conflict.jobId) jobIds.add(conflict.jobId);
+      conflict.relatedJobIds?.forEach((jobId) => jobIds.add(jobId));
+      jobIds.forEach((jobId) => {
+        map.set(jobId, [...(map.get(jobId) ?? []), conflict]);
+      });
+    });
+    return map;
+  }, [data.conflicts]);
+
   const selectedJobResources = selectedJob ? assignmentsByJob.get(selectedJob.id) ?? [] : [];
+  const selectedJobConflicts = selectedJob ? conflictsByJob.get(selectedJob.id) ?? [] : [];
   const filteredResources = assignmentForm.resourceType === "ALL"
     ? data.resources
     : data.resources.filter((resource) => resource.type === assignmentForm.resourceType);
@@ -292,6 +339,34 @@ export default function Home() {
     }
   }
 
+  async function deleteAssignment(assignmentId: string) {
+    const response = await fetch(`/api/assignments/${assignmentId}`, { method: "DELETE" });
+    setMessage(response.ok ? "Assignment removed." : "Assignment could not be removed.");
+    if (response.ok) await refresh();
+  }
+
+  async function deleteSelectedJob() {
+    if (!selectedJobId || !window.confirm("Delete this job and its assignments?")) return;
+    const response = await fetch(`/api/jobs/${selectedJobId}`, { method: "DELETE" });
+    setMessage(response.ok ? "Job deleted." : "Job could not be deleted.");
+    if (response.ok) {
+      setDrawerMode(null);
+      setSelectedJobId("");
+      await refresh();
+    }
+  }
+
+  async function deleteSelectedResource() {
+    if (!selectedResourceId || !window.confirm("Delete this resource and remove it from assigned jobs?")) return;
+    const response = await fetch(`/api/resources/${selectedResourceId}`, { method: "DELETE" });
+    setMessage(response.ok ? "Resource deleted." : "Resource could not be deleted.");
+    if (response.ok) {
+      setDrawerMode(null);
+      setSelectedResourceId("");
+      await refresh();
+    }
+  }
+
   async function updateJobDates(job: Job, startsAt: string, endsAt: string) {
     await fetch(`/api/jobs/${job.id}`, {
       method: "PATCH",
@@ -394,7 +469,7 @@ export default function Home() {
                 <Metric key={metric.label} {...metric} onClick={() => setActiveTab(metric.tab)} />
               ))}
             </div>
-            <JobList title="Upcoming schedule" jobs={data.jobs.slice(0, 8)} assignmentsByJob={assignmentsByJob} onOpenJob={openJob} />
+            <JobList title="Upcoming schedule" jobs={data.jobs.slice(0, 8)} assignmentsByJob={assignmentsByJob} conflictsByJob={conflictsByJob} onOpenJob={openJob} />
           </section>
         )}
 
@@ -406,6 +481,8 @@ export default function Home() {
             setViewDate={setViewDate}
             jobs={data.jobs}
             assignmentsByJob={assignmentsByJob}
+            conflictsByJob={conflictsByJob}
+            conflicts={data.conflicts}
             onOpenJob={openJob}
             onDropJob={dropJobOnDay}
           />
@@ -419,6 +496,8 @@ export default function Home() {
             setViewDate={setViewDate}
             jobs={data.jobs}
             assignmentsByJob={assignmentsByJob}
+            conflictsByJob={conflictsByJob}
+            conflicts={data.conflicts}
             onOpenJob={openJob}
             onDropJob={dropJobOnDay}
           />
@@ -442,6 +521,8 @@ export default function Home() {
             onSubmit={submitImport}
           />
         )}
+
+        {activeTab === "Docs" && <DocsView />}
       </div>
 
       {drawerMode && (
@@ -461,15 +542,19 @@ export default function Home() {
             </div>
 
             {(drawerMode === "resource" || drawerMode === "resource-detail") && (
-              <ResourceForm form={resourceForm} setForm={setResourceForm} onSubmit={submitResource} isEdit={drawerMode === "resource-detail"} />
+              <ResourceForm form={resourceForm} setForm={setResourceForm} onSubmit={submitResource} onDelete={deleteSelectedResource} isEdit={drawerMode === "resource-detail"} />
             )}
 
             {(drawerMode === "job" || drawerMode === "job-detail") && (
               <div className="space-y-5">
-                <JobForm form={jobForm} setForm={setJobForm} onSubmit={submitJob} isEdit={drawerMode === "job-detail"} />
+                <JobForm form={jobForm} setForm={setJobForm} onSubmit={submitJob} onDelete={deleteSelectedJob} isEdit={drawerMode === "job-detail"} />
+                {drawerMode === "job-detail" && selectedJob && (
+                  <JobConflictPanel conflicts={selectedJobConflicts} onResolve={resolveConflict} />
+                )}
                 {drawerMode === "job-detail" && selectedJob && (
                   <AssignedResources
                     assignments={selectedJobResources}
+                    onRemove={deleteAssignment}
                     openAssign={() => {
                       setAssignmentForm({ ...assignmentForm, jobId: selectedJob.id, resourceIds: [] });
                       setDrawerMode("assign");
@@ -514,23 +599,23 @@ function Field({ label, value, onChange, testId, type = "text" }: { label: strin
   );
 }
 
-function JobList({ title, jobs, assignmentsByJob, onOpenJob }: { title: string; jobs: Job[]; assignmentsByJob: Map<string, Assignment[]>; onOpenJob: (job: Job) => void }) {
+function JobList({ title, jobs, assignmentsByJob, conflictsByJob, onOpenJob }: { title: string; jobs: Job[]; assignmentsByJob: Map<string, Assignment[]>; conflictsByJob: Map<string, ScheduleConflict[]>; onOpenJob: (job: Job) => void }) {
   return (
     <section className="rounded border border-line bg-white p-4">
       <h2 className="text-lg font-bold">{title}</h2>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} assignments={assignmentsByJob.get(job.id) ?? []} onOpen={() => onOpenJob(job)} />
+          <JobCard key={job.id} job={job} assignments={assignmentsByJob.get(job.id) ?? []} conflicts={conflictsByJob.get(job.id) ?? []} onOpen={() => onOpenJob(job)} />
         ))}
       </div>
     </section>
   );
 }
 
-function JobCard({ job, assignments, onOpen, draggable = false }: { job: Job; assignments: Assignment[]; onOpen: () => void; draggable?: boolean }) {
+function JobCard({ job, assignments, conflicts, onOpen, draggable = false }: { job: Job; assignments: Assignment[]; conflicts: ScheduleConflict[]; onOpen: () => void; draggable?: boolean }) {
   return (
     <button
-      className="focus-ring w-full rounded border border-line bg-white p-3 text-left transition hover:border-accent"
+      className={`focus-ring w-full rounded border p-3 text-left transition hover:border-accent ${conflictClasses(conflicts)}`}
       draggable={draggable}
       onDragStart={(event) => event.dataTransfer.setData("text/plain", job.id)}
       onClick={onOpen}
@@ -541,7 +626,14 @@ function JobCard({ job, assignments, onOpen, draggable = false }: { job: Job; as
           <h3 className="font-bold">{job.title}</h3>
           <p className="text-sm text-slate-600">{displayDate(job.startsAt)} - {displayDate(job.endsAt)}</p>
         </div>
-        <span className="rounded bg-panel px-2 py-1 text-xs font-bold">{job.status}</span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="rounded bg-panel px-2 py-1 text-xs font-bold">{job.status}</span>
+          {conflicts.length > 0 && (
+            <span className={`rounded px-2 py-1 text-xs font-bold ${conflictBadgeClasses(conflicts)}`} data-testid={`job-conflict-${job.title}`}>
+              {conflictLabel(conflicts)}
+            </span>
+          )}
+        </div>
       </div>
       <p className="mt-2 text-sm text-slate-700">
         {assignments.map((assignment) => `${assignment.resource?.name ?? assignment.resourceId}${assignment.resource?.type ? ` (${resourceLabels[assignment.resource.type]})` : ""}`).join(", ") || "No resources assigned"}
@@ -557,6 +649,8 @@ function CalendarBoard({
   setViewDate,
   jobs,
   assignmentsByJob,
+  conflictsByJob,
+  conflicts,
   onOpenJob,
   onDropJob
 }: {
@@ -566,18 +660,25 @@ function CalendarBoard({
   setViewDate: (date: Date) => void;
   jobs: Job[];
   assignmentsByJob: Map<string, Assignment[]>;
+  conflictsByJob: Map<string, ScheduleConflict[]>;
+  conflicts: ScheduleConflict[];
   onOpenJob: (job: Job) => void;
   onDropJob: (event: React.DragEvent, date: Date) => void;
 }) {
   const days = mode === "month" ? monthDays(viewDate) : weekDays(viewDate);
   const jump = mode === "month" ? 30 : 7;
+  const visibleJobIds = new Set(jobs.filter((job) => days.some((day) => sameDay(new Date(job.startsAt), day))).map((job) => job.id));
+  const visibleConflicts = conflicts.filter((conflict) => {
+    if (conflict.jobId && visibleJobIds.has(conflict.jobId)) return true;
+    return conflict.relatedJobIds?.some((jobId) => visibleJobIds.has(jobId));
+  });
 
   return (
     <section className="rounded border border-line bg-white p-4" data-testid={mode === "month" ? "month-view" : "week-view"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold">{title}</h2>
-          <p className="text-sm text-slate-600">Drag jobs between days to reschedule.</p>
+          <p className="text-sm text-slate-600">Drag jobs between days to reschedule. Conflict cards are marked in red or amber.</p>
         </div>
         <div className="flex gap-2">
           <button className="focus-ring rounded border border-line px-3 py-2 text-sm font-semibold" onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() - jump))}>Previous</button>
@@ -585,22 +686,34 @@ function CalendarBoard({
           <button className="focus-ring rounded border border-line px-3 py-2 text-sm font-semibold" onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + jump))}>Next</button>
         </div>
       </div>
+      {visibleConflicts.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2 rounded border border-line bg-panel p-3 text-sm" data-testid={`${mode}-conflict-summary`}>
+          <span className="font-bold text-rose">{visibleConflicts.filter((conflict) => conflict.severity === "error").length} blocking</span>
+          <span className="text-slate-500">/</span>
+          <span className="font-bold text-amber">{visibleConflicts.filter((conflict) => conflict.severity === "warning").length} warnings</span>
+          <span className="text-slate-600">Click a marked job to review or fix it.</span>
+        </div>
+      )}
       <div className={`mt-4 grid gap-2 ${mode === "month" ? "grid-cols-1 md:grid-cols-7" : "grid-cols-1 lg:grid-cols-7"}`}>
         {days.map((day) => {
           const dayJobs = jobs.filter((job) => sameDay(new Date(job.startsAt), day));
+          const dayConflicts = dayJobs.flatMap((job) => conflictsByJob.get(job.id) ?? []);
           const outsideMonth = mode === "month" && day.getMonth() !== viewDate.getMonth();
           return (
             <div
               key={day.toISOString()}
-              className={`min-h-40 rounded border p-2 ${outsideMonth ? "border-slate-200 bg-slate-50" : "border-line bg-panel"}`}
+              className={`min-h-40 rounded border p-2 ${dayConflicts.length > 0 ? "border-rose/60 bg-rose/5" : outsideMonth ? "border-slate-200 bg-slate-50" : "border-line bg-panel"}`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => onDropJob(event, day)}
               data-testid={`calendar-day-${day.toISOString().slice(0, 10)}`}
             >
-              <p className="mb-2 text-xs font-bold text-slate-600">{displayDay(day)}</p>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-bold text-slate-600">{displayDay(day)}</p>
+                {dayConflicts.length > 0 && <span className="rounded bg-rose px-2 py-0.5 text-xs font-bold text-white">{dayConflicts.length}</span>}
+              </div>
               <div className="space-y-2">
                 {dayJobs.map((job) => (
-                  <JobCard key={job.id} job={job} assignments={assignmentsByJob.get(job.id) ?? []} onOpen={() => onOpenJob(job)} draggable />
+                  <JobCard key={job.id} job={job} assignments={assignmentsByJob.get(job.id) ?? []} conflicts={conflictsByJob.get(job.id) ?? []} onOpen={() => onOpenJob(job)} draggable />
                 ))}
               </div>
             </div>
@@ -642,11 +755,11 @@ function ConflictView({ conflicts, onResolve }: { conflicts: ScheduleConflict[];
         {conflicts.length === 0 && <p className="rounded border border-line p-4 text-sm text-mint">No conflicts found.</p>}
         {conflicts.map((conflict, index) => (
           <article key={`${conflict.type}-${index}`} className="rounded border border-line p-3">
-            <p className={`text-sm font-bold ${conflict.severity === "error" ? "text-rose" : "text-amber"}`}>{conflict.type}</p>
+            <p className={`text-sm font-bold ${conflict.severity === "error" ? "text-rose" : "text-amber"}`}>{formatConflictType(conflict.type)}</p>
             <p className="mt-1 text-sm">{conflict.message}</p>
             {conflict.type === "DOUBLE_BOOKED_RESOURCE" && (
               <button className="focus-ring mt-3 rounded border border-line px-3 py-2 text-sm font-semibold text-accent" onClick={() => onResolve(conflict)} data-testid="resolve-conflict">
-                Move second job after first
+                Move later job after earlier job
               </button>
             )}
           </article>
@@ -709,7 +822,76 @@ function ImportExport({
   );
 }
 
-function ResourceForm({ form, setForm, onSubmit, isEdit }: { form: { name: string; type: ResourceType; active: boolean; tags: string; notes: string }; setForm: (value: { name: string; type: ResourceType; active: boolean; tags: string; notes: string }) => void; onSubmit: (event: React.FormEvent) => void; isEdit: boolean }) {
+function DocsView() {
+  const endpoints = [
+    ["GET", "/api/bootstrap", "Full schedule snapshot with conflicts"],
+    ["GET/POST", "/api/resources", "List or create resources"],
+    ["PATCH/DELETE", "/api/resources/:id", "Edit or delete one resource"],
+    ["GET/POST", "/api/jobs", "List or create jobs"],
+    ["PATCH/DELETE", "/api/jobs/:id", "Edit, reschedule, or delete one job"],
+    ["GET/POST", "/api/assignments", "List or create assignments"],
+    ["DELETE", "/api/assignments/:id", "Remove one assignment"],
+    ["GET", "/api/csv/export?entity=resources", "Export resources, jobs, or assignments"],
+    ["POST", "/api/csv/import", "Import resources, jobs, or assignments"]
+  ];
+
+  return (
+    <section className="space-y-4" data-testid="docs-view">
+      <div className="rounded border border-line bg-white p-4">
+        <h2 className="text-lg font-bold">Docs</h2>
+        <p className="mt-2 text-sm text-slate-700">
+          The app keeps live scheduling data in one database and uses CSV for export, backup, and spreadsheet handoff. CSV is intentionally not the live database because deletes, assignments, conflict checks, and two-person editing get brittle quickly in a flat file.
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded border border-line bg-white p-4">
+          <h3 className="font-bold">Data model</h3>
+          <div className="mt-3 grid gap-2 text-sm">
+            {["Resources: people, crews, equipment, subcontractors", "Jobs: scheduled work with dates, status, and equipment need", "Assignments: the link between jobs and resources", "Conflicts: calculated from the current schedule, not stored by hand"].map((item) => (
+              <p key={item} className="rounded bg-panel px-3 py-2">{item}</p>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded border border-line bg-white p-4">
+          <h3 className="font-bold">Six-month guardrails</h3>
+          <div className="mt-3 grid gap-2 text-sm">
+            {["Keep CSV import/export, but do not replace the database with CSV.", "Add authentication before customer or field-team rollout.", "Add audit history before multiple dispatchers edit the same schedule.", "Use integration jobs for Smartsheet or ServiceTitan instead of editing both systems manually."].map((item) => (
+              <p key={item} className="rounded bg-panel px-3 py-2">{item}</p>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded border border-line bg-white p-4">
+        <h3 className="font-bold">API reference</h3>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-line">
+                <th className="py-2 pr-3">Method</th>
+                <th className="py-2 pr-3">Path</th>
+                <th className="py-2">Use</th>
+              </tr>
+            </thead>
+            <tbody>
+              {endpoints.map(([method, path, use]) => (
+                <tr key={`${method}-${path}`} className="border-b border-line last:border-b-0">
+                  <td className="py-2 pr-3 font-bold text-accent">{method}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">{path}</td>
+                  <td className="py-2">{use}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function ResourceForm({ form, setForm, onSubmit, onDelete, isEdit }: { form: { name: string; type: ResourceType; active: boolean; tags: string; notes: string }; setForm: (value: { name: string; type: ResourceType; active: boolean; tags: string; notes: string }) => void; onSubmit: (event: React.FormEvent) => void; onDelete: () => void; isEdit: boolean }) {
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
       <Field label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} testId="resource-name" />
@@ -728,14 +910,21 @@ function ResourceForm({ form, setForm, onSubmit, isEdit }: { form: { name: strin
         Notes
         <textarea className="mt-1 min-h-24 w-full rounded border border-line p-2" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
       </label>
-      <button className="focus-ring w-full rounded bg-accent px-4 py-2 font-semibold text-white" type="submit">
-        {isEdit ? "Save resource" : "Add resource"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button className="focus-ring flex-1 rounded bg-accent px-4 py-2 font-semibold text-white" type="submit">
+          {isEdit ? "Save resource" : "Add resource"}
+        </button>
+        {isEdit && (
+          <button className="focus-ring rounded border border-rose px-4 py-2 font-semibold text-rose" type="button" onClick={onDelete} data-testid="delete-resource">
+            Delete
+          </button>
+        )}
+      </div>
     </form>
   );
 }
 
-function JobForm({ form, setForm, onSubmit, isEdit }: { form: { title: string; projectRef: string; startsAt: string; endsAt: string; status: JobStatus; workType: string; requiresEquipment: boolean; notes: string }; setForm: (value: { title: string; projectRef: string; startsAt: string; endsAt: string; status: JobStatus; workType: string; requiresEquipment: boolean; notes: string }) => void; onSubmit: (event: React.FormEvent) => void; isEdit: boolean }) {
+function JobForm({ form, setForm, onSubmit, onDelete, isEdit }: { form: { title: string; projectRef: string; startsAt: string; endsAt: string; status: JobStatus; workType: string; requiresEquipment: boolean; notes: string }; setForm: (value: { title: string; projectRef: string; startsAt: string; endsAt: string; status: JobStatus; workType: string; requiresEquipment: boolean; notes: string }) => void; onSubmit: (event: React.FormEvent) => void; onDelete: () => void; isEdit: boolean }) {
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
       <Field label="Title" value={form.title} onChange={(title) => setForm({ ...form, title })} testId="job-title" />
@@ -759,9 +948,16 @@ function JobForm({ form, setForm, onSubmit, isEdit }: { form: { title: string; p
         Notes
         <textarea className="mt-1 min-h-24 w-full rounded border border-line p-2" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
       </label>
-      <button className="focus-ring w-full rounded bg-accent px-4 py-2 font-semibold text-white" type="submit">
-        {isEdit ? "Save job" : "Add job"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button className="focus-ring flex-1 rounded bg-accent px-4 py-2 font-semibold text-white" type="submit">
+          {isEdit ? "Save job" : "Add job"}
+        </button>
+        {isEdit && (
+          <button className="focus-ring rounded border border-rose px-4 py-2 font-semibold text-rose" type="button" onClick={onDelete} data-testid="delete-job">
+            Delete
+          </button>
+        )}
+      </div>
     </form>
   );
 }
@@ -817,7 +1013,29 @@ function AssignForm({ jobs, resources, allResources, form, setForm, onSubmit }: 
   );
 }
 
-function AssignedResources({ assignments, openAssign }: { assignments: Assignment[]; openAssign: () => void }) {
+function JobConflictPanel({ conflicts, onResolve }: { conflicts: ScheduleConflict[]; onResolve: (conflict: ScheduleConflict) => void }) {
+  return (
+    <section className="rounded border border-line p-3" data-testid="job-conflict-panel">
+      <h3 className="font-bold">Schedule check</h3>
+      {conflicts.length === 0 && <p className="mt-2 text-sm text-mint">No conflicts on this job.</p>}
+      <div className="mt-3 space-y-2">
+        {conflicts.map((conflict, index) => (
+          <div key={`${conflict.type}-${index}`} className={`rounded border px-3 py-2 text-sm ${conflict.severity === "error" ? "border-rose bg-rose/5" : "border-amber bg-amber/5"}`}>
+            <p className={`font-bold ${conflict.severity === "error" ? "text-rose" : "text-amber"}`}>{formatConflictType(conflict.type)}</p>
+            <p className="mt-1">{conflict.message}</p>
+            {conflict.type === "DOUBLE_BOOKED_RESOURCE" && (
+              <button className="focus-ring mt-2 rounded border border-line bg-white px-3 py-2 font-semibold text-accent" type="button" onClick={() => onResolve(conflict)}>
+                Move later job after earlier job
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AssignedResources({ assignments, onRemove, openAssign }: { assignments: Assignment[]; onRemove: (assignmentId: string) => void; openAssign: () => void }) {
   return (
     <section className="rounded border border-line p-3">
       <div className="flex items-center justify-between gap-3">
@@ -829,10 +1047,15 @@ function AssignedResources({ assignments, openAssign }: { assignments: Assignmen
       <div className="mt-3 space-y-2">
         {assignments.length === 0 && <p className="text-sm text-slate-600">No resources assigned.</p>}
         {assignments.map((assignment) => (
-          <p key={assignment.id} className="rounded bg-panel px-3 py-2 text-sm">
-            <span className="font-semibold">{assignment.resource?.name ?? assignment.resourceId}</span>
-            {assignment.resource?.type && <span className="text-slate-600"> ({resourceLabels[assignment.resource.type]})</span>}
-          </p>
+          <div key={assignment.id} className="flex items-center justify-between gap-3 rounded bg-panel px-3 py-2 text-sm">
+            <p>
+              <span className="font-semibold">{assignment.resource?.name ?? assignment.resourceId}</span>
+              {assignment.resource?.type && <span className="text-slate-600"> ({resourceLabels[assignment.resource.type]})</span>}
+            </p>
+            <button className="focus-ring rounded border border-line bg-white px-2 py-1 text-xs font-semibold text-accent" type="button" onClick={() => onRemove(assignment.id)} data-testid={`remove-assignment-${assignment.id}`}>
+              Remove
+            </button>
+          </div>
         ))}
       </div>
     </section>

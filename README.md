@@ -15,11 +15,35 @@ This is not a public appointment-booking app.
 - Create people, crews, equipment, and subcontractors.
 - Create jobs or shifts with dates, statuses, work types, and equipment requirements.
 - Assign multiple resources to one job.
-- Show dashboard, month, week, resource, and conflict views.
+- Show dashboard, month, week, resource, conflict, and docs views.
+- Mark conflicts directly inside month and week calendars.
+- Edit and delete jobs, resources, and assignments.
 - Detect schedule conflicts with tested business rules.
 - Import and export resources, jobs, and assignments as CSV.
 - Seed realistic Telcyte-style and Barker-style demo data.
 - Provide placeholders for future Smartsheet and ServiceTitan integrations.
+
+## Data Approach
+
+The app uses PostgreSQL as the source of truth and CSV as the portable interchange format.
+
+CSV is intentionally supported for import, export, backups, spreadsheet review, and quick customer handoff. It is not used as the live database because scheduling has relationships that are easy to corrupt in a flat file: one job can have many resources, deleting a resource must remove related assignments, and conflict checks depend on consistent dates and links.
+
+For a lightweight MVP, this gives a simple user experience while keeping the project ready for Railway, integrations, and multiple dispatchers later.
+
+## API Reference
+
+The in-app `Docs` tab summarizes the API. Current endpoints:
+
+- `GET /api/bootstrap` - full schedule snapshot with conflicts.
+- `GET /api/resources` and `POST /api/resources` - list or create resources.
+- `PATCH /api/resources/:id` and `DELETE /api/resources/:id` - edit or delete one resource.
+- `GET /api/jobs` and `POST /api/jobs` - list or create jobs.
+- `PATCH /api/jobs/:id` and `DELETE /api/jobs/:id` - edit, reschedule, or delete one job.
+- `GET /api/assignments` and `POST /api/assignments` - list or create assignments.
+- `DELETE /api/assignments/:id` - remove one assignment.
+- `GET /api/csv/export?entity=resources` - export `resources`, `jobs`, or `assignments`.
+- `POST /api/csv/import` - import `resources`, `jobs`, or `assignments`.
 
 ## Tech Stack
 

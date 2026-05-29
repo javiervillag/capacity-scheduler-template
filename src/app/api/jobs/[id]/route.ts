@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { JobStatus } from "@prisma/client";
-import { isDemoMode, updateDemoJob } from "@/lib/demo/store";
+import { deleteDemoJob, isDemoMode, updateDemoJob } from "@/lib/demo/store";
 import { prisma } from "@/lib/db/prisma";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -35,4 +35,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   return NextResponse.json(await prisma.job.update({ where: { id }, data }));
+}
+
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
+  if (isDemoMode()) {
+    deleteDemoJob(id);
+    return NextResponse.json({ ok: true });
+  }
+
+  await prisma.job.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
 }

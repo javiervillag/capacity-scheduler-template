@@ -211,3 +211,20 @@ export function updateDemoJob(jobId: string, input: Partial<DemoJob>) {
   store.jobs[index] = { ...store.jobs[index], ...input, updatedAt: now() };
   return store.jobs[index];
 }
+
+export function deleteDemoJob(jobId: string) {
+  const store = demoStore();
+  store.jobs = store.jobs.filter((jobItem) => jobItem.id !== jobId);
+  store.assignments = store.assignments.filter((assignmentItem) => assignmentItem.jobId !== jobId);
+}
+
+export function deleteDemoResource(resourceId: string) {
+  const store = demoStore();
+  store.resources = store.resources.filter((resourceItem) => resourceItem.id !== resourceId);
+  store.assignments = store.assignments.filter((assignmentItem) => assignmentItem.resourceId !== resourceId);
+}
+
+export function deleteDemoAssignment(assignmentId: string) {
+  const store = demoStore();
+  store.assignments = store.assignments.filter((assignmentItem) => assignmentItem.id !== assignmentId);
+}

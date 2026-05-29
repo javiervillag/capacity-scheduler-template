@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ResourceType } from "@prisma/client";
-import { isDemoMode } from "@/lib/demo/store";
+import { deleteDemoResource, isDemoMode } from "@/lib/demo/store";
 import { prisma } from "@/lib/db/prisma";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -36,4 +36,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body.notes !== undefined) data.notes = String(body.notes);
 
   return NextResponse.json(await prisma.resource.update({ where: { id }, data }));
+}
+
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+
+  if (isDemoMode()) {
+    deleteDemoResource(id);
+    return NextResponse.json({ ok: true });
+  }
+
+  await prisma.resource.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
 }

@@ -54,6 +54,14 @@ test("main scheduling flows work in the browser", async ({ page }) => {
   await expect(page.getByText("Resources assigned.")).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
 
+  await page.getByRole("button", { name: "Month", exact: true }).click();
+  await expect(page.getByTestId("month-view")).toBeVisible();
+  await page.getByRole("button", { name: "Today" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByTestId("month-conflict-summary")).toContainText("blocking");
+  await expect(page.getByTestId(`job-conflict-${firstJob}`)).toBeVisible();
+
   await page.getByRole("button", { name: "Conflicts", exact: true }).click();
   await expect(page.getByTestId("conflict-view")).toBeVisible();
   await expect(page.getByText(new RegExp(`${resourceName} is double-booked`))).toBeVisible();
@@ -83,7 +91,14 @@ test("main scheduling flows work in the browser", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Edit resource" })).toBeVisible();
   await page.getByRole("button", { name: "Save resource" }).click();
   await expect(page.getByText("Resource updated.")).toBeVisible();
-  await page.getByRole("button", { name: "Close" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("delete-resource").click();
+  await expect(page.getByText("Resource deleted.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Docs", exact: true }).click();
+  await expect(page.getByTestId("docs-view")).toBeVisible();
+  await expect(page.getByText("CSV is intentionally not the live database")).toBeVisible();
+  await expect(page.getByText("/api/bootstrap")).toBeVisible();
 
   await page.getByRole("button", { name: "Import/Export", exact: true }).click();
   await expect(page.getByTestId("import-export-view")).toBeVisible();
