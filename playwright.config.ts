@@ -6,13 +6,13 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: "http://127.0.0.1:3100",
     trace: "on-first-retry"
   },
   webServer: {
-    command: "npm run start",
-    url: "http://127.0.0.1:3000",
-    reuseExistingServer: !process.env.CI,
+    command: "PORT=3100 npm run start",
+    url: "http://127.0.0.1:3100",
+    reuseExistingServer: false,
     timeout: 120_000
   },
   projects: [

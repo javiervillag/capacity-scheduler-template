@@ -15,7 +15,7 @@ This is not a public appointment-booking app.
 - Create people, crews, equipment, and subcontractors.
 - Create jobs or shifts with dates, statuses, work types, and equipment requirements.
 - Assign multiple resources to one job.
-- Show dashboard, month, week, resource, conflict, and docs views.
+- Show a focused schedule workspace with month/week views, planner summary, resources, and data tools.
 - Mark conflicts directly inside month and week calendars.
 - Edit and delete jobs, resources, and assignments.
 - Detect schedule conflicts with tested business rules.
@@ -33,7 +33,7 @@ For a lightweight MVP, this gives a simple user experience while keeping the pro
 
 ## API Reference
 
-The in-app `Docs` tab summarizes the API. Current endpoints:
+The in-app `Docs` drawer and `Data` workspace summarize the API. Current endpoints:
 
 - `GET /api/bootstrap` - full schedule snapshot with conflicts.
 - `GET /api/resources` and `POST /api/resources` - list or create resources.

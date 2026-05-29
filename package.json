@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:demo": "DEMO_MODE=true next dev",
-    "build": "next build",
+    "build": "rm -rf .next && next build --webpack",
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "vitest run",
