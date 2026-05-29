@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: capacity-scheduler-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: capacity
+      POSTGRES_PASSWORD: capacity
+      POSTGRES_DB: capacity_scheduler
+    ports:
+      - "5432:5432"
+    volumes:
+      - capacity_scheduler_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U capacity -d capacity_scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  capacity_scheduler_pg:

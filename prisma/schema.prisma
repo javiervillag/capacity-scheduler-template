@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ResourceType {
+  PERSON
+  CREW
+  EQUIPMENT
+  SUBCONTRACTOR
+}
+
+enum JobStatus {
+  DRAFT
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+model Resource {
+  id          String       @id @default(cuid())
+  name        String
+  type        ResourceType
+  active      Boolean      @default(true)
+  tags        String       @default("")
+  notes       String       @default("")
+  assignments Assignment[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([name, type])
+  @@index([type])
+}
+
+model Job {
+  id                String       @id @default(cuid())
+  title             String
+  projectRef        String       @default("")
+  startsAt          DateTime
+  endsAt            DateTime
+  status            JobStatus    @default(SCHEDULED)
+  workType          String       @default("")
+  notes             String       @default("")
+  requiresEquipment Boolean      @default(false)
+  assignments       Assignment[]
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([startsAt])
+  @@index([status])
+}
+
+model Assignment {
+  id         String   @id @default(cuid())
+  jobId      String
+  resourceId String
+  role       String   @default("")
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([jobId, resourceId])
+  @@index([jobId])
+  @@index([resourceId])
+}

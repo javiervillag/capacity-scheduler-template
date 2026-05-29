@@ -1,0 +1,67 @@
+import { expect, test } from "@playwright/test";
+
+test("main scheduling flows work in the browser", async ({ page }) => {
+  const suffix = Date.now();
+  const resourceName = `E2E Technician ${suffix}`;
+  const firstJob = `E2E Morning Job ${suffix}`;
+  const secondJob = `E2E Overlap Job ${suffix}`;
+
+  await page.goto("/");
+  await expect(page.getByTestId("dashboard-view")).toBeVisible();
+  await expect(page.getByTestId("assign-resource")).toContainText("Barker Technician 01");
+
+  await page.getByTestId("resource-name").fill(resourceName);
+  await page.getByTestId("resource-type").selectOption("PERSON");
+  await page.getByRole("button", { name: "Add resource" }).click();
+  await expect(page.getByText("Resource created.")).toBeVisible();
+
+  await page.getByTestId("job-title").fill(firstJob);
+  await page.getByTestId("job-start").fill("2026-07-08T08:00");
+  await page.getByTestId("job-end").fill("2026-07-08T10:00");
+  await page.getByRole("button", { name: "Add job" }).click();
+  await expect(page.getByText("Job created.")).toBeVisible();
+
+  await page.getByTestId("job-title").fill(secondJob);
+  await page.getByTestId("job-start").fill("2026-07-08T09:00");
+  await page.getByTestId("job-end").fill("2026-07-08T11:00");
+  await page.getByRole("button", { name: "Add job" }).click();
+  await expect(page.getByText("Job created.")).toBeVisible();
+
+  await page.getByTestId("assign-job").selectOption({ label: firstJob });
+  await page.getByTestId("assign-resource").selectOption({ label: resourceName });
+  await page.getByRole("button", { name: "Assign" }).click();
+  await expect(page.getByText("Assignment created.")).toBeVisible();
+
+  await page.getByTestId("assign-job").selectOption({ label: secondJob });
+  await page.getByTestId("assign-resource").selectOption({ label: resourceName });
+  await page.getByRole("button", { name: "Assign" }).click();
+  await expect(page.getByText("Assignment created.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Conflicts" }).click();
+  await expect(page.getByTestId("conflict-view")).toBeVisible();
+  await expect(page.getByText(new RegExp(`${resourceName} is double-booked`))).toBeVisible();
+
+  const conflictCount = await page.getByTestId("resolve-conflict").count();
+  await page.getByTestId("resolve-conflict").nth(conflictCount - 1).click();
+  await expect(page.getByText("Schedule adjusted.")).toBeVisible();
+  await expect(page.getByText(new RegExp(`${resourceName} is double-booked`))).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Month" }).click();
+  await expect(page.getByTestId("month-view")).toBeVisible();
+
+  await page.getByRole("button", { name: "Week" }).click();
+  await expect(page.getByTestId("week-view")).toBeVisible();
+
+  await page.getByRole("button", { name: "Resources" }).click();
+  await expect(page.getByTestId("resource-view")).toBeVisible();
+
+  await page.getByRole("button", { name: "Import/Export" }).click();
+  await expect(page.getByTestId("import-export-view")).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByTestId("export-resources").click();
+  expect((await download).suggestedFilename()).toBe("resources.csv");
+
+  await page.getByTestId("csv-input").fill("name,type\nBad Resource,NOPE");
+  await page.getByRole("button", { name: "Validate and import" }).click();
+  await expect(page.getByTestId("import-errors")).toContainText("type is invalid");
+});
